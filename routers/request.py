@@ -21,7 +21,7 @@ from schemas.orders_schema import OrderOut # Assuming you have this schema for o
 
 request_router = APIRouter(prefix="/requests", tags=["Requests"])
 
-# load_dotenv()
+load_dotenv()
 
 # Configuration from environment variables
 SPACES_REGION = os.getenv("SPACES_REGION")
