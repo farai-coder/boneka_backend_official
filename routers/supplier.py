@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 
 supplier_router = APIRouter(prefix="/suppliers", tags=["Suppliers"]) # Changed prefix to plural
 # Load environment variables
-load_dotenv()
+# load_dotenv()
 
 # Configuration from environment variables
 SPACES_REGION = os.getenv("SPACES_REGION")

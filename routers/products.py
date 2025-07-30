@@ -19,7 +19,7 @@ import os
 # Create a new router for products
 product_router = APIRouter(prefix="/products", tags=["Products"]) # Changed tag to plural
 # Load environment variables (ensure this is at the very top of your file or in main.py)
-load_dotenv()
+# load_dotenv()
 
 # Configuration from environment variables
 SPACES_REGION = os.getenv("SPACES_REGION")

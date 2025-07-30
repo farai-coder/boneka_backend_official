@@ -16,7 +16,7 @@ from botocore.exceptions import NoCredentialsError
 
 user_router = APIRouter(prefix="/users", tags=["Users"])
 # Load environment variables
-load_dotenv()
+# load_dotenv()
 
 # Configuration from environment variables
 SPACES_REGION = os.getenv("SPACES_REGION")
