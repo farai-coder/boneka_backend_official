@@ -205,41 +205,26 @@ async def create_request(
 def list_request_posts(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, gt=0, le=1000),
-    status_filter: Optional[str] = Query(None, alias="status", description="Filter by request status (e.g., 'open', 'fulfilled')"),
-    category: Optional[str] = Query(None, description="Filter by request category"),
-    customer_id: Optional[UUID] = Query(None, description="Filter by customer ID (for admin/supplier view)"),
+    customer_id: UUID = Query(..., description="Filter by customer ID"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_user) # Using mock user
 ):
     """
-    Retrieve a list of request posts. Customers can only see their own requests.
-    Suppliers can see 'open' requests. Admins can see all.
+    Retrieve all requests for a specific customer where status is either 'open' or 'counter_offered'.
     """
-    query = db.query(RequestPost)
+    valid_statuses = ["open", "counter_offered"]
 
-    if current_user.role in ("customer", "both"):
-        query = query.filter(
-            RequestPost.customer_id == current_user.id,
-            RequestPost.status.in_(["open", "counter_offered"])
+    query = (
+        db.query(RequestPost)
+        .filter(
+            RequestPost.customer_id == customer_id,
+            RequestPost.status.in_(valid_statuses)
         )
+        .offset(skip)
+        .limit(limit)
+    )
 
-    elif current_user.role == "both":
-        query = query.filter(RequestPost.status == "open") # Suppliers only see open requests to act on
-    # If admin, no initial filter on user/status, can filter by params
+    return query.all()
 
-    if status_filter:
-        # Update valid_statuses to match your models.py RequestPost statuses
-        valid_statuses = ["open", "supplier_accepted", "counter_offered", "fulfilled", "cancelled_by_customer", "rejected_by_customer"]
-        if status_filter not in valid_statuses:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid status filter. Allowed: {', '.join(valid_statuses)}")
-        query = query.filter(RequestPost.status == status_filter)
-    if category:
-        query = query.filter(RequestPost.category == category)
-    if current_user.role == "admin" and customer_id: # Only admin can filter by arbitrary customer_id
-        query = query.filter(RequestPost.customer_id == customer_id)
-
-    request_posts = query.offset(skip).limit(limit).all()
-    return request_posts
 
 @request_router.get("/{request_id}", response_model=RequestOut, status_code=status.HTTP_200_OK)
 def get_request_post(

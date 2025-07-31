@@ -35,6 +35,13 @@ class OrderOut(OrderBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+class OrderStatusAction(BaseModel):
+    # Full representation of an order for output
+    order_id: UUID
+    user_id: UUID
+    role: str # Role of the user performing the action (e.g., "customer", "supplier")
+    action: str # e.g., "deliver", "cancel"
+
 # You might also want schemas for Offer, if they don't exist:
 # schemas/offer_schema.py (Example)
 # from pydantic import BaseModel, ConfigDict

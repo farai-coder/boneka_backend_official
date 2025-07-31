@@ -253,7 +253,8 @@ def respond_to_offer(action_in: OfferAction, db: Session = Depends(get_db)):
                 # Create a dummy Pydantic object for the order_data
                 order_creation_payload = OrderCreateFromOffer(
                     customer_id=acting_user.id,
-                    offer_id=offer.id
+                    offer_id=offer.id,
+                    supplier_id=offer.supplier_id,
                 )
                 
                 # Call the order creation logic

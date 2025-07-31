@@ -5,7 +5,8 @@ from database import get_db
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from models import Offer, Order, RequestPost, User # Ensure all models are imported
 from uuid import UUID
-from schemas.orders_schema import DetailedOrderOut, OrderAction, OrderOut, OrderCreateFromOffer # Import new schema
+from schemas.offer_schema import MessageResponse
+from schemas.orders_schema import DetailedOrderOut, OrderAction, OrderOut, OrderCreateFromOffer, OrderStatusAction # Import new schema
 from fastapi.responses import JSONResponse
 from datetime import datetime, timezone # For timezone-aware datetimes
 
@@ -28,61 +29,108 @@ def confirm_offer_and_create_order(
     The associated request's status will be updated to 'fulfilled'.
     Only "pending" offers can be accepted.
     """
+    print("--- Starting confirm_offer_and_create_order endpoint ---")
+    print(f"Received order_data: {order_data.model_dump()}") # Use model_dump() for Pydantic v2+
+
+    # 1. Check Customer Retrieval
     customer = db.query(User).filter(User.id == order_data.customer_id).first()
-    # if not customer or customer.role != "customer":
+    if not customer:
+        print(f"Error: Customer with ID {order_data.customer_id} not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found.")
+    print(f"Customer found: {customer.id} (Role: {customer.role})")
+
+    # If you uncommented this for testing, keep it here
+    # if customer.role != "customer":
+    #     print(f"Error: User {customer.id} is not a customer.")
     #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only customers can confirm offers.")
 
+
+    # 2. Check Offer Retrieval
     offer = db.query(Offer).filter(Offer.id == order_data.offer_id).first()
     if not offer:
+        print(f"Error: Offer with ID {order_data.offer_id} not found.")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Offer not found.")
+    print(f"Offer found: {offer.id} (Status: {offer.status}, Request ID: {offer.request_id})")
 
-    # Check if the offer is for this customer
+
+    # 3. Check Request Retrieval and Customer Match
     request = db.query(RequestPost).filter(RequestPost.id == offer.request_id).first()
-    if not request or request.customer_id != customer.id:
+    if not request:
+        print(f"Error: RequestPost with ID {offer.request_id} not found (linked to offer {offer.id}).")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Associated request not found.")
+
+    if request.customer_id != customer.id:
+        print(f"Error: Offer's request (ID: {request.id}) customer ID ({request.customer_id}) does not match current customer ID ({customer.id}).")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This offer is not for your request.")
+    print(f"Request found and customer matches: {request.id}")
 
-    # Ensure the offer is still pending
-    if offer.status != "pending":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Offer status is '{offer.status}', cannot be confirmed.")
+    # 4. Check Offer Status
+    # if offer.status != "pending":
+    #     print(f"Error: Offer status is '{offer.status}', cannot be confirmed.")
+    #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Offer status is '{offer.status}', cannot be confirmed.")
+    # print(f"Offer status is 'pending'.")
 
-    # Check if an order already exists for this offer (should be unique)
+    # 5. Check for Existing Order
     existing_order = db.query(Order).filter(Order.offer_id == offer.id).first()
     if existing_order:
+        print(f"Error: An order already exists for this offer ({offer.id}). Existing order ID: {existing_order.id}")
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An order already exists for this offer.")
+    print("No existing order found for this offer. Proceeding to create.")
+
+    # --- THIS IS WHERE YOUR ORIGINAL PRINTS ARE ---
+    # If execution reaches here, these prints *will* show up in your console/logs.
+    print("\n--- Values before Order creation ---")
+    print(f"Request ID to use: {request.id}")
+    print(f"Offer ID to use: {offer.id}")
+    print(f"Customer ID to use: {customer.id}")
+    print(f"Supplier ID to use: {offer.supplier_id}")
+    print(f"Total Price to use: {offer.proposed_price}")
+    print(f"Quantity to use: {request.quantity}")
+    current_utc_time = datetime.now(timezone.utc)
+    print(f"Created At timestamp: {current_utc_time}")
+    print("------------------------------------\n")
 
     # Create the new order
     new_order = Order(
-        offer_id=offer.id,
         request_id=request.id,
+        offer_id=offer.id,
         customer_id=customer.id,
         supplier_id=offer.supplier_id,
-        agreed_price=offer.price,
-        quantity=request.quantity, # Take quantity from the original request
+        total_price=float(offer.proposed_price),
+        quantity=request.quantity,
         status="placed",
-        created_at=datetime.now(timezone.utc)
+        created_at=current_utc_time # Use the stored current_utc_time
     )
+    print(f"New Order object created in memory with ID (if default generated): {new_order.id}")
+
 
     # Update offer status to 'accepted'
     offer.status = "accepted"
     offer.updated_at = datetime.now(timezone.utc)
+    print(f"Offer {offer.id} status set to 'accepted'.")
 
     # Update the associated request status to 'fulfilled'
-    # This marks the request as completed from the customer's perspective
     request.status = "fulfilled"
     request.updated_at = datetime.now(timezone.utc)
+    print(f"Request {request.id} status set to 'fulfilled'.")
 
     try:
         db.add(new_order)
         db.add(offer) # Add offer to session for update
         db.add(request) # Add request to session for update
         db.commit()
-        db.refresh(new_order)
+        db.refresh(new_order) # Refresh to get auto-generated fields like id if not provided
         db.refresh(offer)
         db.refresh(request)
+        print(f"Successfully committed changes to DB. New Order ID: {new_order.id}")
     except Exception as e:
         db.rollback()
+        import traceback
+        traceback.print_exc() # This will print the full traceback to your console/logs
+        print(f"Failed to create order or update related entities: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to create order: {e}")
 
+    print("--- Endpoint finished successfully ---")
     return new_order
 
 # Get all placed/active orders for a user (customer or supplier)
@@ -121,16 +169,15 @@ def get_single_order(order_id: UUID, db: Session = Depends(get_db)):
     return order
 
 # Mark order as delivered or as cancelled
-@orders_router.patch("/{order_id}/status", response_model=OrderOut) # Return the updated order
+@orders_router.patch("/{order_id}/status", response_model=MessageResponse) # Return the updated order
 def update_order_status(
-    order_id: UUID,
-    action: OrderAction,
+    action: OrderStatusAction,
     db: Session = Depends(get_db)
 ):
     """
     Allows a customer to cancel an order or a supplier to mark an order as delivered.
     """
-    order = db.query(Order).filter(Order.id == order_id).first()
+    order = db.query(Order).filter(Order.id == action.order_id).first()
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     
@@ -142,13 +189,13 @@ def update_order_status(
     if order.status != "placed":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Order status is '{order.status}', cannot be updated. Only 'placed' orders can be modified.")
 
-    if user.role == "customer" and action.action == "cancelled":
+    if user.role == "customer" or user.role == "both" and action.action == "cancel" and action.role == "customer":
         if order.customer_id != user.id: # Ensure the customer owns this order
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not authorized to cancel this order.")
         
         order.status = "cancelled"
         
-    elif user.role == "supplier" and action.action == "delivered":
+    elif user.role == "both" and action.action == "deliver" and action.role == "supplier":
         if order.supplier_id != user.id: # Ensure the supplier owns this order
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You are not authorized to mark this order as delivered.")
         
@@ -169,7 +216,7 @@ def update_order_status(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to update order status: {e}")
 
     # Return the updated order object
-    return order
+    return {"message": f"Order status updated to '{order.status}' successfully."}
 
 # Get all completed (delivered or cancelled) orders for a user (history)
 @orders_router.get("/history/{user_id}", response_model=List[OrderOut])
@@ -280,3 +327,22 @@ def get_orders_by_customer(
             "delivery_address": order.delivery_address
         })
     return response
+
+@orders_router.get("/delete-order/{user_id}", response_model=MessageResponse)
+def delete_order_by(order_id: UUID, db: Session = Depends(get_db)):
+    """
+    Deletes an order by its ID.
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found.")
+    
+    try:
+        db.delete(order)
+        db.commit()
+        db.refresh(order)  # Refresh to ensure the order is fully deleted from the session
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to delete order: {e}")
+
+    return {"message": "Order deleted successfully."}

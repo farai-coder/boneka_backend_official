@@ -194,7 +194,7 @@ class Order(Base):
     # "cancelled_by_customer": Customer cancelled after placement
     # "cancelled_by_supplier": Supplier cancelled after placement
     status: Mapped[str] = mapped_column(
-        Enum("placed", "processing", "shipped", "delivered", "completed", "cancelled_by_customer", "cancelled_by_supplier", name="order_statuses", create_type=True),
+        Enum("placed", "processing", "shipped", "delivered", "completed", "cancelled", "cancelled_by_supplier", name="order_statuses", create_type=True),
         server_default="placed", nullable=False
     )
 
