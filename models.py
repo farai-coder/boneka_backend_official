@@ -139,7 +139,7 @@ class Offer(Base):
     # "cancelled_by_supplier": Supplier cancelled their own offer before customer action
     # "expired": Offer expired (e.g., customer didn't respond in time)
     status: Mapped[str] = mapped_column(
-        Enum("pending", "accepted", "rejected", "cancelled_by_supplier", "expired", name="offer_statuses", create_type=True),
+        Enum("pending", "accepted", "rejected", "cancelled_by_supplier", "expired", "countered", name="offer_statuses", create_type=True),
         server_default="pending", nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
