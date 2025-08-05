@@ -285,7 +285,7 @@ def get_supplier_profile(user_id: UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
     # Ensure the user has a supplier role to expose their business profile
-    if user.role != "supplier":
+    if user.role != "both":
         # You might choose to return a 404 or a message indicating not a supplier
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User is not a supplier or business profile not found.")
 
