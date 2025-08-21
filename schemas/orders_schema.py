@@ -81,14 +81,14 @@ class DetailedOrderOut(BaseModel):
     image_path: Optional[str] = Field(None, description="Image associated with the request")
     status: str = Field(..., description="Current status of the order")
     customer_name: str = Field(..., description="Name of the customer")
-    customer_profile_pic_path: Optional[str] = Field(None, description="Customer profile path")
-    customer_phone_number: Optional[str] = Field(None, description="Customer phone number")
-    supplier_name: Optional[str] = Field(None, description="Supplier name")
-    supplier_phone_number: Optional[str] = Field(None, description="Supplier phone number")
-    supplier_rating: Optional[str] = Field(None, description="Supplier rating")
-    supplier_profile_pic_path: Optional[str] = Field(None, description="Supplier profile pic")
-    delivery_date: Optional[datetime] = Field(None, description="Expected delivery date")
-    delivery_address: Optional[str] = Field(None, description="Delivery address")
+    customer_profile_pic_path: Optional[str] = Field(description="Customer profile path")
+    customer_phone_number: Optional[str] = Field(description="Customer phone number")
+    supplier_name: Optional[str] = Field(description="Supplier name")
+    supplier_phone_number: Optional[str] = Field(description="Supplier phone number")
+    supplier_rating: Optional[str] = Field(description="Supplier rating")
+    supplier_profile_pic_path: Optional[str] = Field(description="Supplier profile pic")
+    delivery_date: Optional[datetime] = Field(description="Expected delivery date")
+    delivery_address: Optional[str] = Field(description="Delivery address")
 
     class Config:
         json_encoders = {
