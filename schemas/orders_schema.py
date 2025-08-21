@@ -82,6 +82,12 @@ class DetailedOrderOut(BaseModel):
     image_path: Optional[str] = Field(None, description="Image associated with the request")
     status: str = Field(..., description="Current status of the order")
     customer_name: str = Field(..., description="Name of the customer")
+    customer_profile_pic_path: str = Field(..., description="customer profiile path")
+    customer_phone_number: str = Field(..., description="Customer phone number")
+    supplier_name: str = Field(..., description="Supplier name")
+    supplier_phone_number: str = Field(..., description="Supplier phone number")
+    supplier_rating: str = Field(..., description="Supplier rating")
+    supplier_profile_pic_path: str = Field(..., description="Supplier profile pic")
     delivery_date: Optional[datetime] = Field(None, description="Expected delivery date")
     delivery_address: Optional[str] = Field(None, description="Delivery address")
 
