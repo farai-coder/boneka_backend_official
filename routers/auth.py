@@ -2,14 +2,19 @@ from typing import Optional
 from datetime import datetime, timedelta, timezone # Import timedelta and timezone
 import string
 import secrets
+import uuid
 
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from config import settings
+import jwt
 from sqlalchemy.orm import Session
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 import bcrypt
+from dependencies import oauth2_scheme # Import OAuth2 scheme for token handling
 
 # Import models
 from database import get_db
-from models import User, VerificationCode # Make sure VerificationCode is imported
+from models import DeviceToken, User, VerificationCode # Make sure VerificationCode is imported
 # Import schemas
 from schemas.auth_schema import (
     AuthBase, AuthLogin, AuthResponse, LoginResponse,
@@ -86,18 +91,93 @@ def set_initial_password(auth: AuthBase, db: Session = Depends(get_db)):
     )
 
 
+# # --- Endpoint for User Login ---
+# @auth_router.post("/login", response_model=LoginResponse, status_code=status.HTTP_200_OK)
+# async def login(form_data: AuthLogin, db: Session = Depends(get_db)):
+#     """
+#     Authenticates a user and returns their login details.
+#     """
+#     user = authenticate_user(db, form_data.email, form_data.password)
+
+#     if user.status == "disabled":
+#         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your account is disabled. Please contact support.")
+#     if user.status == "pending":
+#         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your account is pending verification. Please complete verification.")
+
+#     return LoginResponse(
+#         user_id=user.id,
+#         status=user.status,
+#         role=user.role,
+#         name=user.name,
+#         profile_image=user.personal_image_path,
+#         email=user.email,
+#         business_name=user.business_name,
+#         business_description=user.business_description,
+#         business_profile_image=user.business_image_path
+#     )
+
 # --- Endpoint for User Login ---
 @auth_router.post("/login", response_model=LoginResponse, status_code=status.HTTP_200_OK)
-async def login(form_data: AuthLogin, db: Session = Depends(get_db)):
+async def login(
+    form_data: AuthLogin,
+    db: Session = Depends(get_db),
+    request: Request = None
+):
     """
-    Authenticates a user and returns their login details.
+    Authenticates a user and returns their login details with a non-expiring token.
+    WARNING: Lifetime tokens pose security risks - ensure you have proper revocation mechanisms.
     """
+    # Authenticate user
     user = authenticate_user(db, form_data.email, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password."
+        )
 
+    # Check account status
     if user.status == "disabled":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your account is disabled. Please contact support.")
-    if user.status == "pending":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Your account is pending verification. Please complete verification.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is disabled. Please contact support."
+        )
+    elif user.status == "pending":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account is pending verification. Please complete verification."
+        )
+
+    # Generate or retrieve device ID from request headers
+    device_id = request.headers.get("X-Device-Id", str(uuid.uuid4()))
+
+    # Build token payload (no expiration)
+    token_payload = {
+        "sub": str(user.id),
+        "device_id": device_id,
+        # No 'exp' included for lifetime token
+    }
+    token = jwt.encode(token_payload, settings.SECRET_KEY, algorithm="HS256")
+
+    # Remove existing token for this user-device combo before saving new one
+    db.query(DeviceToken).filter(
+        DeviceToken.user_id == user.id,
+        DeviceToken.device_id == device_id
+    ).delete(synchronize_session=False)
+
+    # Save new device token
+    device_token = DeviceToken(
+        user_id=user.id,
+        device_id=device_id,
+        token=token,
+        issued_at=datetime.utcnow(),
+        last_used=datetime.utcnow(),
+        expires_at=None  # Explicitly no expiration
+    )
+    db.add(device_token)
+
+    # Optionally update user last login timestamp
+    user.last_login = datetime.utcnow()
+    db.commit()
 
     return LoginResponse(
         user_id=user.id,
@@ -108,7 +188,10 @@ async def login(form_data: AuthLogin, db: Session = Depends(get_db)):
         email=user.email,
         business_name=user.business_name,
         business_description=user.business_description,
-        business_profile_image=user.business_image_path
+        business_profile_image=user.business_image_path,
+        token=token,
+        device_id=device_id,
+        token_expires_at=None  # Indicate token never expires
     )
 
 # 1. Request Password Reset (Generates and "sends" code)
@@ -249,3 +332,42 @@ async def change_password(data: PasswordChange, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to change password: {e}")
 
     return MessageResponse(message="Password changed successfully.")
+
+bearer_scheme = HTTPBearer()
+
+@auth_router.get("/verify-token")
+async def verify_token(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db)
+):
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        print("Decoded JWT payload:", payload)  # debug
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token: missing sub")
+
+        # Convert string to UUID
+        try:
+            user_uuid = uuid.UUID(user_id)
+        except ValueError:
+            raise HTTPException(status_code=401, detail="Invalid user ID in token")
+
+        user = db.query(User).filter(User.id == user_uuid).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+
+        return {
+            "valid": True,
+            "user": {
+                "id": str(user.id),
+                "name": user.name,
+                "email": user.email
+            }
+        }
+
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")

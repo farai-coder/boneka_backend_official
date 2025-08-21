@@ -154,7 +154,7 @@ async def create_request(
     description: str = Form(None),
     offer_price: float = Form(...),
     customer_id: str = Form(...),
-    image: UploadFile = File(...),
+    image: UploadFile = File(None),
     db: Session = Depends(get_db),
 ):
     # Convert customer_id string to UUID
@@ -168,17 +168,29 @@ async def create_request(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    # Check if image is valid
-    if not image.content_type or not image.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail=f"File '{image.filename}' is not a valid image.")
+    # # Check if image is valid
+    # if not image.content_type or not image.content_type.startswith("image/"):
+    
+    image_url = None
 
-    contents = await image.read()
-    image_uuid = uuid.uuid4()
-    spaces_filename = f"requests/images/{image_uuid}"
+    if image is not None:
+        if not image.content_type or not image.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail=f"File '{image.filename}' is not a valid image.")
 
-    image_url = upload_file_to_spaces(contents, spaces_filename, image.content_type)
-    if image_url is None:
-        raise HTTPException(status_code=500, detail=f"Failed to upload image '{image.filename}'.")
+        contents = await image.read()
+        image_uuid = uuid.uuid4()
+        spaces_filename = f"requests/images/{image_uuid}"
+
+        image_url = upload_file_to_spaces(contents, spaces_filename, image.content_type)
+
+
+    # contents = await image.read()
+    # image_uuid = uuid.uuid4()
+    # spaces_filename = f"requests/images/{image_uuid}"
+
+    # image_url = upload_file_to_spaces(contents, spaces_filename, image.content_type)
+    # if image_url is None:
+    #     raise HTTPException(status_code=500, detail=f"Failed to upload image '{image.filename}'.")
 
     db_request = RequestPost(
         title=title,

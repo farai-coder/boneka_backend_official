@@ -282,6 +282,8 @@ def get_orders_by_supplier(
             "image_path": order.request_post.image_path,
             "status": order.status,
             "customer_name": f"{order.customer.name}",
+            "customer_profile_pic_path": order.customer.personal_image_path,
+            "customer_phone_number": order.customer.phone_number,
             "delivery_date": order.offer.delivery_date,
             "delivery_address": order.delivery_address
         })
@@ -295,7 +297,9 @@ def get_orders_by_customer(
 ):
     """
     Retrieves all orders made by the specified user as customer.
-    Returns: List of orders with order number, request description, price, date, image, and status.
+    Returns: List of orders with order number, request description, price, date, image, status,
+    customer name, supplier name, supplier phone number, supplier rating, supplier profile picture path,
+    delivery date, and delivery address.
     """
     # Verify user exists
     if not db.query(User).filter(User.id == user_id).first():
@@ -323,10 +327,15 @@ def get_orders_by_customer(
             "image_path": order.request_post.image_path,
             "status": order.status,
             "customer_name": f"{order.customer.name}",
+            "supplier_name": f"{order.supplier.name}",
+            "supplier_phone_number": order.supplier.phone_number,
+            "supplier_rating": getattr(order.supplier, "rating", None),  # Assuming rating field exists
+            "supplier_profile_pic_path": order.supplier.personal_image_path,
             "delivery_date": order.offer.delivery_date,
             "delivery_address": order.delivery_address
         })
     return response
+
 
 @orders_router.get("/delete-order/{user_id}", response_model=MessageResponse)
 def delete_order_by(order_id: UUID, db: Session = Depends(get_db)):

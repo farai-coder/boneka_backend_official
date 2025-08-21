@@ -19,6 +19,7 @@ import os
 # Create a new router for products
 product_router = APIRouter(prefix="/products", tags=["Products"]) # Changed tag to plural
 # Load environment variables (ensure this is at the very top of your file or in main.py)
+
 load_dotenv()
 
 # Configuration from environment variables
@@ -28,14 +29,14 @@ ACCESS_KEY = os.getenv("ACCESS_KEY")
 SECRET_KEY = os.getenv("SECRET_KEY")
 BUCKET_NAME = os.getenv("BUCKET_NAME")
 
-# --- Validate Configuration ---
+# --- Validate Configuration (Optional but Recommended) ---
 required_vars = ["SPACES_REGION", "SPACES_ENDPOINT", "ACCESS_KEY", "SECRET_KEY", "BUCKET_NAME"]
 for var in required_vars:
     if os.getenv(var) is None:
         raise ValueError(f"Environment variable {var} not set. Please check your .env file.")
 
-# Initialize S3 client globally
-s3_client = None
+# Initialize S3 client globally. This should ideally be handled with FastAPI's dependency injection
+# or application startup events for more robust error handling and resource management.
 try:
     session = boto3.session.Session()
     s3_client = session.client(
@@ -47,32 +48,51 @@ try:
     )
 except Exception as e:
     print(f"Error initializing S3 client: {e}")
-    s3_client = None
+    s3_client = None # Set to None if initialization fails, and handle this in functions
 
 
-def upload_file_to_spaces(file_data: bytes, filename: str, content_type: str) -> str:
+def upload_file_to_spaces(file_data: bytes, filename: str, content_type: str):
     """
-    Uploads a file to DigitalOcean Spaces. Raises HTTPException on failure.
+    Uploads a file to DigitalOcean Spaces.
+
+    Args:
+        file_data (bytes): The content of the file to upload.
+        filename (str): The desired filename in Spaces.
+        content_type (str): The MIME type of the file (e.g., "image/jpeg").
+
+    Returns:
+        str: The public URL of the uploaded file, or None if an error occurs.
     """
     if s3_client is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="S3 client not initialized. Cannot upload file.")
+        print("S3 client not initialized. Cannot upload file.")
+        return None
     try:
         s3_client.put_object(
             Bucket=BUCKET_NAME,
             Key=filename,
             Body=file_data,
-            ACL='public-read',
+            ACL='public-read',  # Makes the file publicly accessible
             ContentType=content_type
         )
+        # Construct the public URL for the uploaded file
         return f"{SPACES_ENDPOINT}/{BUCKET_NAME}/{filename}"
+    
     except NoCredentialsError:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Credentials not available. Check ACCESS_KEY and SECRET_KEY in .env.")
+        print("Credentials not available. Check ACCESS_KEY and SECRET_KEY in .env.")
+        return None
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error uploading file to Spaces: {e}")
+        print(f"Error uploading file to Spaces: {e}")
+        return None
 
-def delete_file_from_spaces(filename: str) -> bool:
+def delete_file_from_spaces(filename: str):
     """
     Deletes a file from DigitalOcean Spaces.
+
+    Args:
+        filename (str): The filename (Key) of the file to delete in Spaces.
+
+    Returns:
+        bool: True if deletion was successful, False otherwise.
     """
     if s3_client is None:
         print("S3 client not initialized. Cannot delete file.")
@@ -83,7 +103,7 @@ def delete_file_from_spaces(filename: str) -> bool:
     except Exception as e:
         print(f"Error deleting file from Spaces: {e}")
         return False
-
+    
 # --- Removed _get_image_url and any /image/{image_id} routes ---
 # These are no longer needed because image_path directly stores the DO Spaces URL
 # The client will fetch images directly from DO Spaces.
@@ -96,12 +116,13 @@ async def create_product(
     price: float = Form(...),
     category: str = Form(...),
     supplier_id: UUID = Form(...),
-    image: UploadFile = File(...),  # Single file
+    image: UploadFile = File(None),  # Single file
     db: Session = Depends(get_db)
 ):
     """
     Creates a new product with an associated image uploaded to DigitalOcean Spaces.
     """
+    image_url = None
     supplier = db.query(User).filter(User.id == supplier_id).first()
     if not supplier:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Supplier not found")
@@ -111,15 +132,15 @@ async def create_product(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User is not authorized to create products (not a supplier).")
 
     # Validate image file type
-    if not image.content_type or not image.content_type.startswith("image/"):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"File '{image.filename}' is not a valid image. Content type: {image.content_type}")
+    # if not image.content_type or not image.content_type.startswith("image/"):
+    #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"File '{image.filename}' is not a valid image. Content type: {image.content_type}")
+    if image is not None:
+        contents = await image.read()
+        file_extension = image.filename.split(".")[-1] if "." in image.filename else "jpg" # Default to jpg
+        spaces_filename = f"products/{supplier_id}/{uuid.uuid4()}.{file_extension}" # Organized by supplier ID
 
-    contents = await image.read()
-    file_extension = image.filename.split(".")[-1] if "." in image.filename else "jpg" # Default to jpg
-    spaces_filename = f"products/{supplier_id}/{uuid.uuid4()}.{file_extension}" # Organized by supplier ID
-
-    image_url = upload_file_to_spaces(contents, spaces_filename, image.content_type)
-    # The upload_file_to_spaces function now raises HTTPException on error, so no explicit check here needed.
+        image_url = upload_file_to_spaces(contents, spaces_filename, image.content_type)
+        # The upload_file_to_spaces function now raises HTTPException on error, so no explicit check here needed.
 
     db_product = Product(
         name=name,

@@ -173,3 +173,29 @@ def get_all_users(db: Session = Depends(get_db)):
     """
     users = db.query(User).all()
     return users
+
+@user_router.delete("/{user_id}", response_model=SuccessMessage, status_code=status.HTTP_200_OK)
+def delete_user(user_id: UUID, db: Session = Depends(get_db)):
+    """
+    Deletes a user by their ID.
+    If the user does not exist, returns 404.
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    try:
+        db.delete(user)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete user: {e}"
+        )
+
+    return SuccessMessage(message=f"User {user_id} deleted successfully")
+

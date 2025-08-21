@@ -27,6 +27,9 @@ class LoginResponse(BaseModel):
     business_name: Optional[str] = None
     business_description: Optional[str] = None
     business_profile_image: Optional[str] = None
+    token: Optional[str] = None
+    device_id: Optional[str] = None
+    token_expires_at: Optional[str] = None
 
 class PasswordChange(BaseModel):
     user_id: UUID # User ID for the logged-in user changing their password
