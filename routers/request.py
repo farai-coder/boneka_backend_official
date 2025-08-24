@@ -497,8 +497,10 @@ def matches_supplier_business(
                 {
                     "role": "system",
                     "content": (
-                        "You are a helpful assistant that determines if a customer request matches "
-                        "a supplier's business category and description. Only reply 'Yes' or 'No'."
+                        "You are a helpful assistant that determines if a customer's request is reasonably related to what the supplier offers. \
+                        If there's a good chance the supplier can handle the request—even if it's not a perfect match—reply 'Yes'. Otherwise, reply 'No'. \
+                        Only reply with 'Yes' or 'No'."
+
                     ),
                 },
                 {"role": "user", "content": user_message}
