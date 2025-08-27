@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from database import engine
 import models
-from routers import user, supplier,products,request,offer,auth,orders
+from routers import analytics, user, supplier,products,request,offer,auth,orders
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -25,6 +25,7 @@ app.include_router(request.request_router)
 app.include_router(offer.offer_router)
 app.include_router(auth.auth_router)
 app.include_router(orders.orders_router)
+app.include_router(analytics.analytics_router)
 
 if __name__ == "__main__":
     import uvicorn
