@@ -1,10 +1,9 @@
 
 
 from fastapi import APIRouter, Depends, HTTPException
-from requests import Session
 from scipy import stats
 from sqlalchemy import func, or_
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, Session
 from database import get_db
 from models import Offer, Order, Product, RequestPost, User
 from schemas.analytics_schema import ComprehensiveOfferStatsResponseSchema, ComprehensiveOrderStatsResponseSchema, ComprehensiveProductStatsResponseSchema, ComprehensiveRequestStatsResponseSchema, ComprehensiveUserStatsResponseSchema, OfferDetailSchema, OrderDetailSchema, ProductDetailSchema, RequestDetailSchema
